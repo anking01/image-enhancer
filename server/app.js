@@ -161,14 +161,9 @@ app.post('/api/enhance', requireAuth, async (req, res) => {
   try {
     const { image } = req.body
     if (!image) return res.status(400).json({ error: 'No image provided.' })
-    const prompt = `Enhance this jewelry product photo for a luxury e-commerce website:
-1. Improve lighting — make jewelry brilliantly lit
-2. Boost sharpness — every detail crisp
-3. Make metals lustrous and polished
-4. Make gemstones vivid and sparkling
-5. Clean white/neutral background
-6. Do not change composition`
-    const result = await geminiEdit(prompt, image)
+    // Remove background with PhotoRoom → clean isolated jewelry on transparent bg
+    // Frontend will then apply canvas enhancement + white background
+    const result = await photoroomRemoveBg(base64ToBuffer(image), getMime(image))
     res.json({ result })
   } catch (err) { console.error('[enhance]', err.message); res.status(500).json({ error: err.message }) }
 })

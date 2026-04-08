@@ -105,7 +105,7 @@ export function addWhiteBackground(dataURL) {
 
 // ─── Canvas: Local Enhancement ──────────────────────────────────────────────
 
-export function localEnhance(dataURL) {
+export function localEnhance(dataURL, strength = 'normal') {
   return new Promise((resolve) => {
     const img = new Image()
     img.onload = () => {
@@ -113,8 +113,24 @@ export function localEnhance(dataURL) {
       canvas.width  = img.naturalWidth
       canvas.height = img.naturalHeight
       const ctx = canvas.getContext('2d')
-      ctx.filter = 'brightness(1.05) contrast(1.12) saturate(1.18)'
-      ctx.drawImage(img, 0, 0)
+
+      if (strength === 'strong') {
+        // Strong enhancement for Enhance & Polish mode
+        // Pass 1: boost brightness + contrast + saturation
+        ctx.filter = 'brightness(1.08) contrast(1.2) saturate(1.35)'
+        ctx.drawImage(img, 0, 0)
+        // Pass 2: sharpness simulation via high-contrast overlay
+        ctx.globalCompositeOperation = 'overlay'
+        ctx.globalAlpha = 0.08
+        ctx.filter = 'contrast(3) brightness(1.1)'
+        ctx.drawImage(img, 0, 0)
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.globalAlpha = 1
+      } else {
+        ctx.filter = 'brightness(1.05) contrast(1.12) saturate(1.18)'
+        ctx.drawImage(img, 0, 0)
+      }
+
       resolve(canvas.toDataURL('image/png'))
     }
     img.src = dataURL
@@ -130,7 +146,7 @@ export async function processImage(dataURL, mode, options = {}, onProgress) {
     step('Removing background…', 15)
     let result = await callAPI('/api/remove-background', dataURL)
     step('Enhancing image…', 80)
-    result = await localEnhance(result)
+    result = await localEnhance(result, 'normal')
     if (options.whiteBg) {
       step('Adding white background…', 95)
       result = await addWhiteBackground(result)
@@ -140,13 +156,12 @@ export async function processImage(dataURL, mode, options = {}, onProgress) {
   }
 
   if (mode === 'remove_mannequin') {
-    step('Removing background…', 10)
-    // Backend does: PhotoRoom BG removal → Gemini mannequin removal
+    step('Removing mannequin…', 15)
     let result = await callAPI('/api/remove-mannequin', dataURL)
-    step('Polishing output…', 88)
-    result = await localEnhance(result)
+    step('Cleaning up…', 80)
+    result = await localEnhance(result, 'normal')
     if (options.whiteBg) {
-      step('Setting white background…', 96)
+      step('Setting white background…', 95)
       result = await addWhiteBackground(result)
     }
     step('Done!', 100)
@@ -154,10 +169,12 @@ export async function processImage(dataURL, mode, options = {}, onProgress) {
   }
 
   if (mode === 'enhance') {
-    step('Enhancing with AI…', 15)
+    step('Removing background…', 15)
     let result = await callAPI('/api/enhance', dataURL)
-    step('Finalising…', 90)
-    result = await localEnhance(result)
+    step('Enhancing & polishing…', 75)
+    result = await localEnhance(result, 'strong')
+    step('Adding white background…', 92)
+    result = await addWhiteBackground(result)
     step('Done!', 100)
     return result
   }
