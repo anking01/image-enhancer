@@ -1,49 +1,75 @@
 import React from 'react'
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
-import { AnimatePresence } from 'framer-motion'
-import { ToastProvider } from './components/ToastProvider.jsx'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { AnimatePresence, motion } from 'framer-motion'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import Navbar from './components/Navbar.jsx'
-import Footer from './components/Footer.jsx'
-import Landing from './pages/Landing.jsx'
-import AppPage from './pages/AppPage.jsx'
-import Features from './pages/Features.jsx'
-import About from './pages/About.jsx'
+import Login from './pages/Login.jsx'
+import Signup from './pages/Signup.jsx'
+import Dashboard from './pages/Dashboard.jsx'
 
-function AnimatedRoutes() {
+function ProtectedRoute({ children }) {
+  const { user } = useAuth()
+  if (!user) return <Navigate to="/login" replace />
+  return children
+}
+
+function PublicRoute({ children }) {
+  const { user } = useAuth()
+  if (user) return <Navigate to="/dashboard" replace />
+  return children
+}
+
+function AppRoutes() {
   const location = useLocation()
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
-        <Route path="/" element={<Landing />} />
-        <Route path="/app" element={<AppPage />} />
-        <Route path="/features" element={<Features />} />
-        <Route path="/about" element={<About />} />
+        <Route path="/login" element={
+          <PublicRoute>
+            <motion.div key="login" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <Login />
+            </motion.div>
+          </PublicRoute>
+        } />
+
+        <Route path="/signup" element={
+          <PublicRoute>
+            <motion.div key="signup" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <Signup />
+            </motion.div>
+          </PublicRoute>
+        } />
+
+        <Route path="/dashboard" element={
+          <ProtectedRoute>
+            <motion.div
+              key="dashboard"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col flex-1 overflow-auto"
+            >
+              <Navbar />
+              <Dashboard />
+            </motion.div>
+          </ProtectedRoute>
+        } />
+
+        {/* Redirect all other routes */}
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </AnimatePresence>
-  )
-}
-
-function AppInner() {
-  const location = useLocation()
-  const isAppPage = location.pathname === '/app'
-
-  return (
-    <div className="min-h-screen bg-bg-primary text-white font-dm flex flex-col">
-      <Navbar />
-      <main className={`flex-1 ${isAppPage ? '' : ''}`}>
-        <AnimatedRoutes />
-      </main>
-      {!isAppPage && <Footer />}
-    </div>
   )
 }
 
 export default function App() {
   return (
     <BrowserRouter>
-      <ToastProvider>
-        <AppInner />
-      </ToastProvider>
+      <AuthProvider>
+        <div className="min-h-screen flex flex-col bg-cream text-stone-900">
+          <AppRoutes />
+        </div>
+      </AuthProvider>
     </BrowserRouter>
   )
 }

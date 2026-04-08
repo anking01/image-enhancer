@@ -8,7 +8,7 @@ import AIEditPanel from '../components/AIEditPanel.jsx'
 import { useAutoEnhance } from '../hooks/useAutoEnhance.js'
 import { useImageEffects } from '../hooks/useImageEffects.js'
 import { useBackgroundRemoval } from '../hooks/useBackgroundRemoval.js'
-import { useCloudGenerate } from '../hooks/useCloudGenerate.js'
+import { useFalGenerate } from '../hooks/useFalGenerate.js'
 import { useImageFilters } from '../hooks/useImageFilters.js'
 import { useHistory } from '../hooks/useHistory.js'
 import { useToast } from '../hooks/useToast.js'
@@ -44,15 +44,12 @@ export default function AppPage() {
   const { analyzeImage, loading: enhancing }                       = useAutoEnhance()
   const { applyEffect, loading: effectsLoading, activeEffect }     = useImageEffects()
   const { removeBackground, loading: bgLoading, progress: bgProgress } = useBackgroundRemoval()
-  const {
-    generateImage, editWithSD, checkStatus, loading: sdLoading,
-    sdStatus, checkingSD,
-  } = useCloudGenerate()
+  const { generateImage, editImage, upscaleImage, loading: falLoading, progress: falProgress } = useFalGenerate()
   const { filters, filterString, updateFilter, applyFilters, resetFilters, filterHistory } = useImageFilters()
   const { history, addToHistory, clearHistory }                    = useHistory()
   const toast = useToast()
 
-  const isAnyLoading = enhancing || effectsLoading || bgLoading || sdLoading
+  const isAnyLoading = enhancing || effectsLoading || bgLoading || falLoading
 
   // ── Load image ────────────────────────────────────────────────
   const loadImage = useCallback(async (file) => {
@@ -132,13 +129,14 @@ export default function AppPage() {
     }
   }, [activeDataURL, removeBackground, pushVersion, addToHistory, filters, toast])
 
-  // ── Local Stable Diffusion: Generate ─────────────────────────
+  // ── fal.ai: Generate image ────────────────────────────────────
   const handleGenerate = useCallback(async (prompt, options) => {
     try {
+      toast.info('Generating with fal.ai…')
       const result = await generateImage(prompt, options)
       if (!originalDataURL) {
         setOriginalDataURL(result)
-        setImageMeta({ filename: 'AI Generated', size: 0, width: options.width || 512, height: options.height || 512 })
+        setImageMeta({ filename: 'AI Generated', size: 0, width: 1024, height: 1024 })
         resetFilters()
         setEditHistory([{ id: 'original', label: 'Generated', dataURL: result, thumbnail: null, timestamp: Date.now() }])
         setCurrentVersionIndex(0)
@@ -148,35 +146,51 @@ export default function AppPage() {
       addToHistory({ id: Date.now().toString(), filename: `Generated — ${prompt.slice(0, 30)}`, thumbnail, filtersApplied: DEFAULT_FILTERS, timestamp: Date.now() })
       toast.success('Image generated!')
     } catch (err) {
-      if (err.message === 'HF_NO_TOKEN') {
-        toast.error('Add your free HuggingFace token in the Generate tab to enable AI generation.')
-      } else if (err.message === 'HF_INVALID_TOKEN') {
-        toast.error('Invalid HuggingFace token. Check and re-enter it in the Generate tab.')
+      if (err.message === 'FAL_NO_KEY') {
+        toast.error('Add your fal.ai API key in the fal.ai tab to enable generation.')
       } else {
         toast.error(err.message || 'Generation failed')
       }
     }
   }, [originalDataURL, generateImage, pushVersion, addToHistory, resetFilters, toast])
 
-  // ── Local Stable Diffusion: Edit image ────────────────────────
-  const handleEditWithSD = useCallback(async (prompt, strength, options) => {
+  // ── fal.ai: Edit image with FLUX Kontext ─────────────────────
+  const handleEditImage = useCallback(async (prompt) => {
     if (!activeDataURL) return
     try {
-      const result = await editWithSD(activeDataURL, prompt, strength, options)
-      await pushVersion(result, `SD Edit: ${prompt.slice(0, 40)}`)
+      toast.info('Editing with FLUX Dev…')
+      const result = await editImage(activeDataURL, prompt)
+      await pushVersion(result, `Edit: ${prompt.slice(0, 40)}`)
       const thumbnail = await resizeImage(result, 200).catch(() => result)
-      addToHistory({ id: Date.now().toString(), filename: `SD Edit — ${prompt.slice(0, 30)}`, thumbnail, filtersApplied: filters, timestamp: Date.now() })
-      toast.success('SD edit applied!')
+      addToHistory({ id: Date.now().toString(), filename: `Edit — ${prompt.slice(0, 30)}`, thumbnail, filtersApplied: filters, timestamp: Date.now() })
+      toast.success('Edit applied!')
     } catch (err) {
-      if (err.message === 'HF_NO_TOKEN') {
-        toast.error('Add your free HuggingFace token in the Generate tab to enable AI generation.')
-      } else if (err.message === 'HF_INVALID_TOKEN') {
-        toast.error('Invalid HuggingFace token. Check and re-enter it in the Generate tab.')
+      if (err.message === 'FAL_NO_KEY') {
+        toast.error('Add your fal.ai API key in the fal.ai tab.')
       } else {
-        toast.error(err.message || 'AI edit failed')
+        toast.error(err.message || 'Edit failed')
       }
     }
-  }, [activeDataURL, editWithSD, pushVersion, addToHistory, filters, toast])
+  }, [activeDataURL, editImage, pushVersion, addToHistory, filters, toast])
+
+  // ── fal.ai: Upscale image ─────────────────────────────────────
+  const handleUpscaleImage = useCallback(async (options) => {
+    if (!activeDataURL) return
+    try {
+      toast.info(`Upscaling ${options.scale}× with Clarity…`)
+      const result = await upscaleImage(activeDataURL, options)
+      await pushVersion(result, `Upscale ${options.scale}×`)
+      const thumbnail = await resizeImage(result, 200).catch(() => result)
+      addToHistory({ id: Date.now().toString(), filename: `Upscaled ${options.scale}×`, thumbnail, filtersApplied: filters, timestamp: Date.now() })
+      toast.success(`${options.scale}× upscale complete!`)
+    } catch (err) {
+      if (err.message === 'FAL_NO_KEY') {
+        toast.error('Add your fal.ai API key in the fal.ai tab.')
+      } else {
+        toast.error(err.message || 'Upscale failed')
+      }
+    }
+  }, [activeDataURL, upscaleImage, pushVersion, addToHistory, filters, toast])
 
   // ── Auto AI Enhance ───────────────────────────────────────────
   const handleEnhance = useCallback(async () => {
@@ -345,18 +359,20 @@ export default function AppPage() {
                     <div className="absolute inset-2 rounded-full border-2 border-accent-purple/30 border-b-accent-purple animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.4s' }} />
                     <div className="absolute inset-4 rounded-full border-2 border-white/10 border-l-white/40 animate-spin" style={{ animationDuration: '2s' }} />
                     <div className="absolute inset-0 flex items-center justify-center text-2xl">
-                      {bgLoading ? '✂️' : effectsLoading ? '🎨' : sdLoading ? '🪄' : '✨'}
+                      {bgLoading ? '✂️' : effectsLoading ? '🎨' : falLoading ? '🪄' : '✨'}
                     </div>
                   </div>
                   <div className="text-center">
                     <p className="font-syne font-bold text-white text-base mb-1">
                       {bgLoading ? 'Removing background…'
                        : effectsLoading ? 'Applying effect…'
-                       : sdLoading ? 'AI generating via HuggingFace…'
+                       : falLoading ? 'Running on fal.ai…'
                        : 'Smart enhancing…'}
                     </p>
                     <p className="text-sm text-slate-400">
-                      {bgLoading && bgProgress ? bgProgress : 'Running locally in your browser'}
+                      {bgLoading && bgProgress ? bgProgress
+                       : falLoading && falProgress ? falProgress
+                       : 'Running locally in your browser'}
                     </p>
                   </div>
                 </motion.div>
@@ -436,15 +452,14 @@ export default function AppPage() {
                 onApplyEffect={handleApplyEffect}
                 onRemoveBackground={handleRemoveBackground}
                 onGenerate={handleGenerate}
-                onEditWithSD={handleEditWithSD}
+                onEditImage={handleEditImage}
+                onUpscaleImage={handleUpscaleImage}
                 effectsLoading={effectsLoading}
                 activeEffect={activeEffect}
                 bgLoading={bgLoading}
                 bgProgress={bgProgress}
-                sdLoading={sdLoading}
-                sdStatus={sdStatus}
-                onCheckSDStatus={checkStatus}
-                checkingSD={checkingSD}
+                falLoading={falLoading}
+                falProgress={falProgress}
                 editHistory={editHistory}
                 onRestoreVersion={handleRestoreVersion}
                 currentVersionIndex={currentVersionIndex}
