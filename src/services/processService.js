@@ -13,14 +13,37 @@ function getToken() {
   return localStorage.getItem('gj_token') || ''
 }
 
+// Compress image before sending — keeps quality high but reduces file size
+// Vercel has a 4.5MB body limit so we need to stay under that
+function compressForUpload(dataURL, maxPx = 1800, quality = 0.88) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      let w = img.naturalWidth
+      let h = img.naturalHeight
+      if (w > maxPx || h > maxPx) {
+        if (w > h) { h = Math.round(h * maxPx / w); w = maxPx }
+        else        { w = Math.round(w * maxPx / h); h = maxPx }
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width  = w
+      canvas.height = h
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+      resolve(canvas.toDataURL('image/jpeg', quality))
+    }
+    img.src = dataURL
+  })
+}
+
 async function callAPI(endpoint, imageDataURL) {
+  const compressed = await compressForUpload(imageDataURL)
   const res = await fetch(endpoint, {
     method:  'POST',
     headers: {
       'Content-Type':  'application/json',
       'Authorization': `Bearer ${getToken()}`,
     },
-    body: JSON.stringify({ image: imageDataURL }),
+    body: JSON.stringify({ image: compressed }),
   })
   const data = await res.json()
   if (!res.ok) throw new Error(data.error || `Server error ${res.status}`)
